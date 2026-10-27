@@ -1,0 +1,106 @@
+@page "/admin/login"
+@* Static SSR on purpose: signing in must set the auth cookie on a real HTTP response. *@
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [AllowAnonymous]
+@attribute [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(LeadApp.Infrastructure.ServiceRegistration.LoginRateLimitPolicy)]
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AdminAuthService Auth
+@inject NavigationManager Navigation
+@inject AppClock Clock
+
+<PageTitle>Prijava · Admin · Partner MKF</PageTitle>
+
+<div class="login">
+    <div class="login-head">
+        <span class="login-icon"><Icon Name="lock" Size="22" /></span>
+        <h1>Prijava na admin panel</h1>
+        <p>Unesite e-mail i lozinku administratora.</p>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert"><Icon Name="alert" Size="18" /> @_error</div>
+    }
+
+    <EditForm Model="Input" method="post" OnValidSubmit="LoginAsync" FormName="admin-login" novalidate>
+        <DataAnnotationsValidator />
+
+        <div class="field">
+            <label for="email">E-mail</label>
+            <div class="with-icon">
+                <Icon Name="mail" Size="16" />
+                <InputText id="email" type="email" class="input" @bind-Value="Input!.Email" autocomplete="username" placeholder="admin@partner.ba" autofocus />
+            </div>
+            <ValidationMessage For="() => Input!.Email" />
+        </div>
+
+        <div class="field">
+            <label for="password">Lozinka</label>
+            <div class="with-icon">
+                <Icon Name="key" Size="16" />
+                <InputText id="password" type="password" class="input" @bind-Value="Input!.Password" autocomplete="current-password" placeholder="••••••••••••" />
+            </div>
+            <ValidationMessage For="() => Input!.Password" />
+        </div>
+
+        <button type="submit" class="btn btn-gradient btn-lg btn-block">Prijavi se <Icon Name="arrow-right" Size="18" /></button>
+    </EditForm>
+
+    <a class="back" href=""><Icon Name="arrow-right" Size="14" Class="flip" /> Nazad na javni obrazac</a>
+</div>
+
+@code {
+    private string? _error;
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm] private LoginInput? Input { get; set; }
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method) && HttpContext.User.IsInRole(AdminRoles.Admin))
+            Navigation.NavigateTo(SafeReturnUrl);
+    }
+
+    private async Task LoginAsync()
+    {
+        var result = await Auth.LoginAsync(Input!.Email, Input.Password);
+        switch (result.Outcome)
+        {
+            case LoginOutcome.Success:
+                await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal!);
+                Navigation.NavigateTo(SafeReturnUrl);
+                break;
+            case LoginOutcome.LockedOut:
+                var until = result.LockoutEndUtc is { } end ? Clock.ToLocal(end).ToString("HH:mm") : "kasnije";
+                _error = $"Račun je privremeno zaključan zbog previše neuspjelih pokušaja. Pokušajte ponovo nakon {until}.";
+                break;
+            default:
+                _error = "Neispravan e-mail ili lozinka.";
+                break;
+        }
+    }
+
+    // Only allow local redirects (prevents open-redirect via ?returnUrl=https://evil).
+    private string SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//") && !ReturnUrl.StartsWith("/\\")
+            ? ReturnUrl
+            : "/admin";
+
+    private sealed class LoginInput
+    {
+        [Required(ErrorMessage = "Unesite e-mail.")]
+        [EmailAddress(ErrorMessage = "Neispravan e-mail.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Unesite lozinku.")]
+        public string Password { get; set; } = "";
+    }
+}

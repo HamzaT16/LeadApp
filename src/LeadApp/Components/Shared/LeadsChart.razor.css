@@ -1,0 +1,41 @@
+.chart {
+    position: relative;
+}
+
+.chart svg {
+    width: 100%;
+    height: 220px;
+    overflow: visible;
+}
+
+.grid {
+    stroke: var(--line);
+    stroke-dasharray: 3 5;
+    vector-effect: non-scaling-stroke;
+}
+
+.pt circle {
+    fill: #fff;
+    stroke: var(--brand);
+    stroke-width: 2;
+    opacity: 0;
+    transition: opacity .12s;
+}
+
+.pt:hover circle { opacity: 1; }
+
+.axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.max-label {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    font-size: 11px;
+    color: var(--muted);
+}

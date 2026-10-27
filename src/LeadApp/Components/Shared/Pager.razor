@@ -1,0 +1,35 @@
+@* Localised pager for QuickGrid's PaginationState (the built-in Paginator text is English only). *@
+@implements IDisposable
+
+@if (State.TotalItemCount is { } total && total > 0)
+{
+    <div class="pager">
+        <span class="pager-summary">
+            @From–@To od <b>@total</b>
+        </span>
+        <nav aria-label="Stranice">
+            <button type="button" class="icon-btn" aria-label="Prethodna stranica" disabled="@(State.CurrentPageIndex == 0)" @onclick="() => GoToAsync(State.CurrentPageIndex - 1)">
+                <Icon Name="chevron-right" Size="16" Class="flip" />
+            </button>
+            <span class="pager-page">Stranica <b>@(State.CurrentPageIndex + 1)</b> od @((State.LastPageIndex ?? 0) + 1)</span>
+            <button type="button" class="icon-btn" aria-label="Sljedeća stranica" disabled="@(State.CurrentPageIndex >= (State.LastPageIndex ?? 0))" @onclick="() => GoToAsync(State.CurrentPageIndex + 1)">
+                <Icon Name="chevron-right" Size="16" />
+            </button>
+        </nav>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public PaginationState State { get; set; } = default!;
+
+    private int From => State.CurrentPageIndex * State.ItemsPerPage + 1;
+    private int To => Math.Min((State.CurrentPageIndex + 1) * State.ItemsPerPage, State.TotalItemCount ?? 0);
+
+    protected override void OnInitialized() => State.TotalItemCountChanged += OnTotalChanged;
+
+    private void OnTotalChanged(object? sender, int? total) => _ = InvokeAsync(StateHasChanged);
+
+    private Task GoToAsync(int page) => State.SetCurrentPageIndexAsync(page);
+
+    public void Dispose() => State.TotalItemCountChanged -= OnTotalChanged;
+}

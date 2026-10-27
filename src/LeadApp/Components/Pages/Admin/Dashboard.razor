@@ -1,0 +1,232 @@
+@page "/admin"
+@inject ILeadRepository Leads
+@inject ICampaignRepository Campaigns
+@inject AppClock Clock
+@inject ILocationService Locations
+@inject IOptions<LeadFormOptions> FormOptions
+@inject ILogger<Dashboard> Logger
+
+<PageTitle>Pregled · Admin · Partner MKF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Pregled</h1>
+        <p>Stanje upita i kampanja na dan @Clock.Today.ToString("dd.MM.yyyy.", CultureInfo.InvariantCulture)</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-ghost" @onclick="LoadAsync" disabled="@_loading"><Icon Name="refresh" Size="16" /> Osvježi</button>
+        <a class="btn btn-primary" href="admin/campaigns"><Icon Name="plus" Size="16" /> Nova kampanja</a>
+    </div>
+</div>
+
+@if (_loading && _leads is null)
+{
+    <PageLoader />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error"><Icon Name="alert" Size="18" /> @_error</div>
+}
+else if (_leads is not null)
+{
+    <div class="kpis">
+        <KpiCard Label="Ukupno leadova" Value="@_leads.Count.ToString("N0", Bs)" Icon="inbox" Hint="od početka rada" />
+        <KpiCard Label="Zadnjih 7 dana" Value="@_last7.ToString("N0", Bs)" Icon="chart" Tone="teal" Trend="_trend" Hint="u odnosu na prethodnih 7" />
+        <KpiCard Label="CRM uspješnost" Value="@_syncRate" Icon="check-circle" Tone="violet" Hint="@($"{_failed} neuspjelih slanja")" />
+        <KpiCard Label="Aktivne kampanje" Value="@_activeCampaigns.ToString(Bs)" Icon="megaphone" Tone="amber" Hint="@($"od {_campaigns!.Count} ukupno")" />
+    </div>
+
+    @if (_failed > 0)
+    {
+        <a class="failed-callout" href="admin/leads?status=Failed">
+            <span class="fc-icon"><Icon Name="alert" Size="18" /></span>
+            <span><b>@_failed @(_failed == 1 ? "lead nije poslan" : "leadova nije poslano") u CRM.</b> Pregledajte greške i ponovite slanje.</span>
+            <Icon Name="chevron-right" Size="18" />
+        </a>
+    }
+
+    <div class="dash-grid">
+        <section class="card">
+            <div class="card-head">
+                <h2>Leadovi — zadnjih 30 dana</h2>
+                <span class="badge badge-info plain">@_daily.Sum(d => d.Count) ukupno</span>
+            </div>
+            <div class="card-pad">
+                <LeadsChart Points="_daily" />
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head"><h2>Struktura upita</h2></div>
+            <div class="card-pad">
+                <div class="donut-row">
+                    <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="Fizička i pravna lica">
+                        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e2e8f0" stroke-width="6" />
+                        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#0066b2" stroke-width="6"
+                                stroke-dasharray="@($"{Inv(_flShare)} {Inv(100 - _flShare)}")" stroke-dashoffset="25" stroke-linecap="butt" />
+                        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#14b8a6" stroke-width="6"
+                                stroke-dasharray="@($"{Inv(100 - _flShare)} {Inv(_flShare)}")" stroke-dashoffset="@Inv(25 - _flShare)" />
+                    </svg>
+                    <ul class="legend">
+                        <li><span class="dot" style="background:#0066b2"></span> Fizička lica <b>@_fl</b></li>
+                        <li><span class="dot" style="background:#14b8a6"></span> Pravna lica <b>@_pl</b></li>
+                    </ul>
+                </div>
+
+                <div class="bars">
+                    @foreach (var (purpose, count) in _byPurpose)
+                    {
+                        var pct = _leads.Count == 0 ? 0 : count * 100.0 / _leads.Count;
+                        <div class="bar-row">
+                            <span class="bar-label">@DisplayNames.Of(purpose)</span>
+                            <span class="bar-track"><span class="bar-fill" style="width:@Inv(pct)%"></span></span>
+                            <span class="bar-val">@count</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="dash-grid">
+        <section class="card">
+            <div class="card-head">
+                <h2>Najuspješnije kampanje</h2>
+                <a href="admin/campaigns" class="btn btn-ghost btn-sm">Sve kampanje</a>
+            </div>
+            @if (_topCampaigns.Count == 0)
+            {
+                <EmptyState Title="Još nema kampanja" Text="Kreirajte prvu kampanju i podijelite njen link putem Vibera, SMS-a ili društvenih mreža." />
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <thead><tr><th>Kampanja</th><th>Status</th><th class="num">Pregledi</th><th class="num">Leadovi</th><th class="num">Konverzija</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in _topCampaigns)
+                            {
+                                <tr>
+                                    <td><span class="cell-main">@c.Name</span><span class="cell-sub">@SourceCodes.NameOf(c.Channel)</span></td>
+                                    <td><Badges Campaign="c" Today="Clock.Today" /></td>
+                                    <td class="num">@c.ViewsCount</td>
+                                    <td class="num"><b>@c.LeadsCount</b></td>
+                                    <td class="num">@c.ConversionRate.ToString("P1", Bs)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Najnoviji upiti</h2>
+                <a href="admin/leads" class="btn btn-ghost btn-sm">Svi leadovi</a>
+            </div>
+            @if (_leads.Count == 0)
+            {
+                <EmptyState Title="Još nema upita" Text="Novi upiti sa javnog obrasca pojavit će se ovdje." />
+            }
+            else
+            {
+                <ul class="recent">
+                    @foreach (var l in _leads.Take(6))
+                    {
+                        <li>
+                            <span class="avatar @(l.CustomerType == CustomerType.PL ? "pl" : "")">
+                                <Icon Name="@(l.CustomerType == CustomerType.PL ? "building" : "user")" Size="16" />
+                            </span>
+                            <div class="recent-main">
+                                <span class="cell-main">@l.FullName</span>
+                                <span class="cell-sub">@(Locations.FindMunicipality(l.CityId)?.Name) · @Clock.ToLocal(l.CreatedAtUtc).ToString("dd.MM. HH:mm", CultureInfo.InvariantCulture)</span>
+                            </div>
+                            <div class="recent-side">
+                                <b>@l.RequestedAmount.ToString("N0", Bs) @FormOptions.Value.Currency</b>
+                                <Badges CrmStatus="l.CrmStatus" />
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly CultureInfo Bs = CultureInfo.GetCultureInfo("bs-Latn-BA");
+
+    private bool _loading;
+    private string? _error;
+    private IReadOnlyList<Lead>? _leads;
+    private IReadOnlyList<Campaign>? _campaigns;
+
+    private int _last7, _failed, _activeCampaigns, _fl, _pl;
+    private double? _trend;
+    private double _flShare;
+    private string _syncRate = "—";
+    private IReadOnlyList<LeadsChart.DayPoint> _daily = [];
+    private List<(LoanPurpose Purpose, int Count)> _byPurpose = [];
+    private List<Campaign> _topCampaigns = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var leadsTask = Leads.GetAllAsync();
+            var campaignsTask = Campaigns.GetAllAsync();
+            await Task.WhenAll(leadsTask, campaignsTask);
+            _leads = leadsTask.Result;
+            _campaigns = campaignsTask.Result;
+            Compute(_leads, _campaigns);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Loading dashboard failed");
+            _error = "Podaci se trenutno ne mogu učitati. Pokušajte ponovo.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Compute(IReadOnlyList<Lead> leads, IReadOnlyList<Campaign> campaigns)
+    {
+        var today = Clock.Today;
+        var localDays = leads.Select(l => DateOnly.FromDateTime(Clock.ToLocal(l.CreatedAtUtc))).ToList();
+
+        _last7 = localDays.Count(d => d > today.AddDays(-7));
+        var prev7 = localDays.Count(d => d <= today.AddDays(-7) && d > today.AddDays(-14));
+        _trend = prev7 > 0 ? (_last7 - prev7) * 100.0 / prev7 : null;
+
+        var synced = leads.Count(l => l.CrmStatus == CrmSyncStatus.Synced);
+        _failed = leads.Count(l => l.CrmStatus == CrmSyncStatus.Failed);
+        _syncRate = synced + _failed == 0 ? "—" : (synced / (double)(synced + _failed)).ToString("P0", Bs);
+
+        _activeCampaigns = campaigns.Count(c => c.IsLive(today));
+
+        _fl = leads.Count(l => l.CustomerType == CustomerType.FL);
+        _pl = leads.Count - _fl;
+        _flShare = leads.Count == 0 ? 50 : _fl * 100.0 / leads.Count;
+
+        var perDay = localDays.GroupBy(d => d).ToDictionary(g => g.Key, g => g.Count());
+        _daily = Enumerable.Range(0, 30)
+            .Select(i => today.AddDays(i - 29))
+            .Select(d => new LeadsChart.DayPoint(d, perDay.GetValueOrDefault(d)))
+            .ToList();
+
+        _byPurpose = Enum.GetValues<LoanPurpose>()
+            .Select(p => (p, leads.Count(l => l.Purpose == p)))
+            .ToList();
+
+        _topCampaigns = campaigns.OrderByDescending(c => c.LeadsCount).ThenByDescending(c => c.ViewsCount).Take(5).ToList();
+    }
+
+    private static string Inv(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

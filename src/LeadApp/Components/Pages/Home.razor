@@ -1,0 +1,130 @@
+﻿@page "/"
+@page "/k/{Slug}"
+@inject ICampaignRepository Campaigns
+@inject AppClock Clock
+@inject IOptions<LeadFormOptions> FormOptions
+@inject ILogger<Home> Logger
+
+<PageTitle>@(_campaign?.Name ?? "Kreditni upit") · Partner MKF</PageTitle>
+
+<section class="hero">
+    <div class="hero-copy">
+        <span class="eyebrow"><span class="pulse"></span> Online zahtjev · bez odlaska u poslovnicu</span>
+        <h1>Vaš sljedeći korak, <span class="grad-text">finansiran bez komplikacija.</span></h1>
+        <p class="lead">
+            Popunite kratak upit za manje od minute. Naš kreditni savjetnik javit će vam se s ponudom
+            prilagođenom vašim potrebama.
+        </p>
+
+        <ul class="points">
+            <li><span class="point-icon"><Icon Name="clock" Size="18" /></span><div><b>Brz odgovor</b><small>Kontakt u najkraćem roku</small></div></li>
+            <li><span class="point-icon"><Icon Name="shield" Size="18" /></span><div><b>Sigurno</b><small>Podaci zaštićeni zakonom</small></div></li>
+            <li><span class="point-icon"><Icon Name="check-circle" Size="18" /></span><div><b>Bez obaveze</b><small>Upit vas ništa ne obavezuje</small></div></li>
+        </ul>
+
+        <div class="art">
+            <HeroIllustration />
+        </div>
+    </div>
+
+    <div class="hero-form">
+        <div class="form-card">
+            @switch (_view)
+            {
+                case View.Loading:
+                    <PageLoader />
+                    break;
+
+                case View.Inactive:
+                    <div class="status">
+                        <StatusIllustration Kind="StatusIllustration.StatusKind.Inactive" />
+                        <h2>Kampanja više nije aktivna</h2>
+                        <p>Ova kreditna ponuda je istekla ili je trenutno onemogućena. I dalje nam možete poslati opšti upit.</p>
+                        <div class="status-actions">
+                            <a class="btn btn-gradient" href="">Pošalji opšti upit <Icon Name="arrow-right" Size="16" /></a>
+                            <a class="btn btn-ghost" href="@FormOptions.Value.HomepageUrl">Idi na partner.ba</a>
+                        </div>
+                    </div>
+                    break;
+
+                case View.Success:
+                    <div class="status" role="status">
+                        <StatusIllustration Kind="StatusIllustration.StatusKind.Success" />
+                        <h2>Hvala vam! Vaš upit je zaprimljen.</h2>
+                        <p>Naš kreditni savjetnik će vas kontaktirati u najkraćem roku.</p>
+                        <div class="status-actions">
+                            <button type="button" class="btn btn-ghost" @onclick="NewInquiry"><Icon Name="refresh" Size="16" /> Novi kreditni upit</button>
+                        </div>
+                    </div>
+                    break;
+
+                default:
+                    <LeadForm @key="_formKey" Campaign="_campaign" OnSubmitted="() => _view = View.Success" OnCampaignInactive="() => _view = View.Inactive" />
+                    break;
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    private enum View { Loading, Form, Success, Inactive }
+
+    private View _view = View.Loading;
+    private Campaign? _campaign;
+    private int _formKey;
+    private bool _viewCounted;
+
+    [Parameter] public string? Slug { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _campaign = null;
+        if (string.IsNullOrWhiteSpace(Slug))
+        {
+            _view = View.Form;
+            return;
+        }
+
+        try
+        {
+            var campaign = await Campaigns.GetBySlugAsync(Slug.Trim().ToLowerInvariant());
+            if (campaign is not null && campaign.IsLive(Clock.Today))
+            {
+                _campaign = campaign;
+                _view = View.Form;
+            }
+            else
+            {
+                _view = View.Inactive;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Loading campaign {Slug} failed", Slug);
+            _view = View.Inactive;
+        }
+    }
+
+    // Counted only once the page is interactive, so prerendering does not double count.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_viewCounted || _campaign is null)
+            return;
+
+        _viewCounted = true;
+        try
+        {
+            await Campaigns.IncrementViewsAsync(_campaign.Id);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Counting view for campaign {Id} failed", _campaign.Id);
+        }
+    }
+
+    private void NewInquiry()
+    {
+        _formKey++;
+        _view = View.Form;
+    }
+}

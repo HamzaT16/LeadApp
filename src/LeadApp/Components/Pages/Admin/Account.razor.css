@@ -1,0 +1,45 @@
+.account-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 18px;
+    align-items: start;
+    max-width: 980px;
+}
+
+.profile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.profile h2 {
+    margin: 2px 0 8px;
+    font-size: 16px;
+    overflow-wrap: anywhere;
+}
+
+.big-avatar {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 60px;
+    height: 60px;
+    border-radius: 18px;
+    background: var(--grad);
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    box-shadow: var(--shadow-brand);
+}
+
+.card-head h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.alert { margin-bottom: 14px; }
+
+@media (max-width: 860px) {
+    .account-grid { grid-template-columns: 1fr; }
+}

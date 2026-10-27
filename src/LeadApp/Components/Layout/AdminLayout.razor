@@ -1,0 +1,86 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<div class="admin @(_navOpen ? "nav-open" : "")">
+    <aside class="sidebar" aria-label="Glavna navigacija">
+        <div class="side-brand">
+            <BrandMark Size="34" />
+            <div>
+                <div class="side-title">Partner MKF</div>
+                <div class="side-sub">Lead administracija</div>
+            </div>
+        </div>
+
+        <nav class="side-nav">
+            <NavLink href="admin" Match="NavLinkMatch.All"><Icon Name="grid" Size="18" /> Pregled</NavLink>
+            <NavLink href="admin/leads"><Icon Name="inbox" Size="18" /> Leadovi</NavLink>
+            <NavLink href="admin/campaigns"><Icon Name="megaphone" Size="18" /> Kampanje</NavLink>
+            <NavLink href="admin/account"><Icon Name="key" Size="18" /> Račun</NavLink>
+        </nav>
+
+        <div class="side-card">
+            <svg viewBox="0 0 200 90" aria-hidden="true" class="side-card-art">
+                <path d="M0 70 C40 60 50 30 90 40 S150 10 200 20 L200 90 L0 90Z" fill="#ffffff" fill-opacity=".14" />
+                <path d="M0 70 C40 60 50 30 90 40 S150 10 200 20" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2.5" />
+                <circle cx="200" cy="20" r="0" />
+            </svg>
+            <p>Javni obrazac</p>
+            <a href="" target="_blank" rel="noopener">Otvori formu <Icon Name="external" Size="13" /></a>
+        </div>
+    </aside>
+
+    <div class="backdrop" @onclick="CloseNav"></div>
+
+    <div class="main">
+        <header class="admin-top">
+            <button type="button" class="icon-btn nav-toggle" aria-label="Meni" @onclick="ToggleNav"><Icon Name="menu" Size="18" /></button>
+            <div class="top-spacer"></div>
+            <AuthorizeView>
+                <Authorized>
+                    <div class="who">
+                        <span class="avatar">@Initial(context.User.Identity?.Name)</span>
+                        <span class="who-mail">@context.User.Identity?.Name</span>
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+            <form method="post" action="admin/logout" class="logout">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn-ghost btn-sm"><Icon Name="logout" Size="15" /> Odjava</button>
+            </form>
+        </header>
+
+        <main class="content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<Toasts />
+
+<div id="blazor-error-ui" data-nosnippet>
+    Došlo je do neočekivane greške.
+    <a href="." class="reload">Osvježi stranicu</a>
+    <span class="dismiss">✕</span>
+</div>
+
+@code {
+    private bool _navOpen;
+
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
+
+    private void ToggleNav() => _navOpen = !_navOpen;
+    private void CloseNav() => _navOpen = false;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_navOpen) return;
+        _navOpen = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string Initial(string? name) =>
+        string.IsNullOrEmpty(name) ? "?" : name[..1].ToUpperInvariant();
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

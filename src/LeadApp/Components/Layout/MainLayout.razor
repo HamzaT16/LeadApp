@@ -1,0 +1,32 @@
+﻿@inherits LayoutComponentBase
+@inject IOptions<LeadFormOptions> FormOptions
+
+<div class="site">
+    <BackgroundBlobs />
+
+    <header class="topbar">
+        <a class="brand" href="">
+            <BrandMark />
+            <span class="brand-name">PARTNER <b>MKF</b></span>
+        </a>
+        <div class="topbar-right">
+            <span class="secure"><Icon Name="lock" Size="14" /> Sigurna veza</span>
+            <DevAdminLink />
+        </div>
+    </header>
+
+    <main class="site-main">
+        @Body
+    </main>
+
+    <footer class="site-footer">
+        <span>© @DateTime.UtcNow.Year Partner mikrokreditna fondacija</span>
+        <a href="@FormOptions.Value.HomepageUrl" target="_blank" rel="noopener noreferrer">partner.ba <Icon Name="external" Size="12" /></a>
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Došlo je do neočekivane greške.
+    <a href="." class="reload">Osvježi stranicu</a>
+    <span class="dismiss">✕</span>
+</div>

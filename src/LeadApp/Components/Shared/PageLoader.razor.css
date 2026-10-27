@@ -1,0 +1,14 @@
+.page-loader {
+    display: grid;
+    place-items: center;
+    min-height: 40vh;
+}
+
+.arc {
+    transform-origin: 22px 22px;
+    animation: spin .9s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

@@ -1,0 +1,34 @@
+<div class="kpi card tone-@Tone">
+    <div class="kpi-top">
+        <span class="kpi-label">@Label</span>
+        <span class="kpi-icon"><Icon Name="@Icon" Size="18" /></span>
+    </div>
+    <div class="kpi-value">@Value</div>
+    @if (Hint is not null || Trend is not null)
+    {
+        <div class="kpi-hint">
+            @if (Trend is { } trend)
+            {
+                <span class="trend @(trend >= 0 ? "up" : "down")">
+                    <Icon Name="@(trend >= 0 ? "arrow-up" : "arrow-down")" Size="12" StrokeWidth="2.6" />
+                    @Math.Abs(trend).ToString("0.#", CultureInfo.InvariantCulture)%
+                </span>
+            }
+            @Hint
+        </div>
+    }
+    <svg class="kpi-deco" viewBox="0 0 120 60" aria-hidden="true">
+        <path d="M0 50 C20 40 30 48 50 32 S80 30 95 18 112 10 120 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+    </svg>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "chart";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public double? Trend { get; set; }
+
+    /// <summary>brand | teal | amber | violet</summary>
+    [Parameter] public string Tone { get; set; } = "brand";
+}

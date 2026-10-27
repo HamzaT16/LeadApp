@@ -1,0 +1,38 @@
+@* Admin login side art: dashboard window with chart, shield and key. *@
+<svg class="login-art" viewBox="0 0 400 320" aria-hidden="true">
+    <defs>
+        <linearGradient id="la-bar" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="#ffffff" stop-opacity=".55" />
+            <stop offset="1" stop-color="#ffffff" />
+        </linearGradient>
+        <filter id="la-sh" x="-20%" y="-20%" width="140%" height="160%">
+            <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#001e3c" flood-opacity=".3" />
+        </filter>
+    </defs>
+
+    <g filter="url(#la-sh)">
+        <rect x="40" y="40" width="270" height="190" rx="18" fill="#ffffff" fill-opacity=".14" stroke="#ffffff" stroke-opacity=".35" />
+        <circle cx="62" cy="62" r="5" fill="#fca5a5" />
+        <circle cx="78" cy="62" r="5" fill="#fde68a" />
+        <circle cx="94" cy="62" r="5" fill="#86efac" />
+        <rect x="64" y="96" width="70" height="10" rx="5" fill="#fff" fill-opacity=".8" />
+        <rect x="64" y="114" width="46" height="8" rx="4" fill="#fff" fill-opacity=".45" />
+        <g class="bars">
+            <rect x="160" y="160" width="20" height="50" rx="5" fill="url(#la-bar)" />
+            <rect x="190" y="135" width="20" height="75" rx="5" fill="url(#la-bar)" />
+            <rect x="220" y="150" width="20" height="60" rx="5" fill="url(#la-bar)" />
+            <rect x="250" y="110" width="20" height="100" rx="5" fill="url(#la-bar)" />
+        </g>
+        <path d="M64 196c20-10 34-30 52-26s22 22 30 18" fill="none" stroke="#99f6e4" stroke-width="4" stroke-linecap="round" />
+    </g>
+
+    <g class="shield" filter="url(#la-sh)">
+        <path d="M300 150 344 166v30c0 26-18 46-44 54-26-8-44-28-44-54v-30l44-16Z" fill="#fff" />
+        <path d="m282 200 13 13 25-27" fill="none" stroke="#0891b2" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+
+    <g class="key" stroke="#facc15" stroke-width="6" stroke-linecap="round" fill="none">
+        <circle cx="82" cy="262" r="16" />
+        <path d="M98 262h56M140 262v12M128 262v9" />
+    </g>
+</svg>

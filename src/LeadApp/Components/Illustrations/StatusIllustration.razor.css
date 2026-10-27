@@ -1,0 +1,39 @@
+.status-art {
+    width: 140px;
+    height: 140px;
+    margin: 0 auto;
+}
+
+.success .disc {
+    transform-origin: 80px 80px;
+    animation: pop .5s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+
+.success .tick {
+    stroke-dasharray: 70;
+    stroke-dashoffset: 70;
+    animation: draw .45s .35s ease-out forwards;
+}
+
+.success .ring {
+    transform-origin: 80px 80px;
+    animation: ripple 2.4s ease-out infinite;
+}
+
+.success .r2 { animation-delay: .6s; }
+
+.success .confetti {
+    transform-origin: 80px 80px;
+    animation: burst .8s .3s ease-out both;
+}
+
+.inactive .cal {
+    transform-origin: 80px 120px;
+    animation: sway 3.2s ease-in-out infinite;
+}
+
+@keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes ripple { 0% { transform: scale(.8); opacity: 1; } 100% { transform: scale(1.15); opacity: 0; } }
+@keyframes burst { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }

@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// LeadApp talks to Firestore only from the ASP.NET Core server, using a service account
+// (Admin SDK credentials bypass these rules). Browsers never access Firestore directly,
+// so every client SDK read and write is denied — including with the public Firebase web apiKey.
+//
+// Deploy: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

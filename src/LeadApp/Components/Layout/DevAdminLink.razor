@@ -1,0 +1,12 @@
+@* Development-only shortcut to the admin panel. In any other environment nothing is rendered:
+   the admin panel is reached by typing /admin. *@
+@inject IWebHostEnvironment Env
+
+@if (Env.IsDevelopment())
+{
+    <a class="dev-admin" href="admin" title="Vidljivo samo u Development okruženju">
+        <Icon Name="key" Size="15" />
+        Admin
+        <span class="dev-tag">DEV</span>
+    </a>
+}

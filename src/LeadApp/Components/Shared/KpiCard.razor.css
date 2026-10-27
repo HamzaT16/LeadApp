@@ -1,0 +1,70 @@
+.kpi {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 18px 16px;
+    --tone: var(--brand);
+    --tone-bg: var(--brand-50);
+}
+
+.tone-teal { --tone: #0d9488; --tone-bg: #ccfbf1; }
+.tone-amber { --tone: #d97706; --tone-bg: #fef3c7; }
+.tone-violet { --tone: #7c3aed; --tone-bg: #ede9fe; }
+
+.kpi-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kpi-label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.kpi-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    background: var(--tone-bg);
+    color: var(--tone);
+}
+
+.kpi-value {
+    margin-top: 10px;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.kpi-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--muted);
+}
+
+.trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.trend.up { background: var(--success-bg); color: var(--success); }
+.trend.down { background: var(--danger-bg); color: var(--danger); }
+
+.kpi-deco {
+    position: absolute;
+    right: -6px;
+    bottom: -4px;
+    width: 120px;
+    color: var(--tone);
+    opacity: .12;
+}

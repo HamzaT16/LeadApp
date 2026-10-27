@@ -1,0 +1,59 @@
+@* Animated status art for the success / inactive / error screens. *@
+@switch (Kind)
+{
+    case StatusKind.Success:
+        <svg class="status-art success" viewBox="0 0 160 160" aria-hidden="true">
+            <defs>
+                <linearGradient id="sa-ok" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#22c55e" />
+                    <stop offset="1" stop-color="#14b8a6" />
+                </linearGradient>
+            </defs>
+            <circle class="ring r1" cx="80" cy="80" r="70" fill="none" stroke="#bbf7d0" stroke-width="2" />
+            <circle class="ring r2" cx="80" cy="80" r="58" fill="none" stroke="#86efac" stroke-width="2" />
+            <circle class="disc" cx="80" cy="80" r="44" fill="url(#sa-ok)" />
+            <path class="tick" d="m60 81 14 14 27-29" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+            <g class="confetti">
+                <rect x="22" y="40" width="8" height="8" rx="2" fill="#0066b2" />
+                <rect x="130" y="34" width="7" height="7" rx="2" fill="#f59e0b" />
+                <circle cx="138" cy="112" r="4.5" fill="#14b8a6" />
+                <circle cx="24" cy="118" r="4" fill="#f43f5e" />
+                <path d="M118 140l4-8 4 8z" fill="#8b5cf6" />
+            </g>
+        </svg>
+        break;
+
+    case StatusKind.Inactive:
+        <svg class="status-art inactive" viewBox="0 0 160 160" aria-hidden="true">
+            <defs>
+                <linearGradient id="sa-cal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#fbbf24" />
+                    <stop offset="1" stop-color="#f59e0b" />
+                </linearGradient>
+            </defs>
+            <circle cx="80" cy="84" r="66" fill="#fef3c7" />
+            <g class="cal">
+                <rect x="40" y="44" width="80" height="76" rx="12" fill="#fff" stroke="#fde68a" stroke-width="3" />
+                <rect x="40" y="44" width="80" height="22" rx="12" fill="url(#sa-cal)" />
+                <rect x="40" y="58" width="80" height="8" fill="url(#sa-cal)" />
+                <path d="M60 36v16M100 36v16" stroke="#92400e" stroke-width="6" stroke-linecap="round" />
+                <path d="m66 82 28 28M94 82l-28 28" stroke="#f59e0b" stroke-width="7" stroke-linecap="round" />
+            </g>
+        </svg>
+        break;
+
+    default:
+        <svg class="status-art error" viewBox="0 0 160 160" aria-hidden="true">
+            <circle cx="80" cy="80" r="66" fill="#fee2e2" />
+            <path d="M80 38 36 116h88L80 38Z" fill="#fff" stroke="#f87171" stroke-width="5" stroke-linejoin="round" />
+            <path d="M80 70v22" stroke="#dc2626" stroke-width="7" stroke-linecap="round" />
+            <circle cx="80" cy="104" r="4.5" fill="#dc2626" />
+        </svg>
+        break;
+}
+
+@code {
+    public enum StatusKind { Success, Inactive, Error }
+
+    [Parameter] public StatusKind Kind { get; set; }
+}

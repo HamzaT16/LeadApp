@@ -1,0 +1,21 @@
+.login-art {
+    width: 100%;
+    max-width: 380px;
+    height: auto;
+}
+
+.bars rect {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: grow .9s cubic-bezier(.34, 1.4, .64, 1) both;
+}
+
+.bars rect:nth-child(2) { animation-delay: .1s; }
+.bars rect:nth-child(3) { animation-delay: .2s; }
+.bars rect:nth-child(4) { animation-delay: .3s; }
+
+.shield { animation: float 5s ease-in-out infinite; }
+.key { animation: float 6s ease-in-out 1s infinite; }
+
+@keyframes grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }

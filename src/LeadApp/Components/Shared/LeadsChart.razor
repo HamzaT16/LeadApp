@@ -1,0 +1,72 @@
+@* Area chart of leads per day, drawn as inline SVG (no chart library / CDN). *@
+<div class="chart">
+    <svg viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img" aria-label="Broj leadova po danu">
+        <defs>
+            <linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#0066b2" stop-opacity=".28" />
+                <stop offset="1" stop-color="#0066b2" stop-opacity="0" />
+            </linearGradient>
+            <linearGradient id="lc-line" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#0066b2" />
+                <stop offset="1" stop-color="#14b8a6" />
+            </linearGradient>
+        </defs>
+
+        @for (var i = 0; i <= GridLines; i++)
+        {
+            var y = Top + (Height - Top - Bottom) * i / (double)GridLines;
+            <line x1="0" x2="@Width" y1="@F(y)" y2="@F(y)" class="grid" />
+        }
+
+        @if (Points.Count > 1)
+        {
+            <path d="@AreaPath" fill="url(#lc-area)" />
+            <path d="@LinePath" fill="none" stroke="url(#lc-line)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+        }
+
+        @for (var i = 0; i < Points.Count; i++)
+        {
+            var (x, y) = Coord(i);
+            var point = Points[i];
+            <g class="pt">
+                <rect x="@F(x - Step / 2)" y="0" width="@F(Step)" height="@Height" fill="transparent" />
+                <circle cx="@F(x)" cy="@F(y)" r="3.5" vector-effect="non-scaling-stroke" />
+                <title>@point.Day.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture): @point.Count</title>
+            </g>
+        }
+    </svg>
+    <div class="axis">
+        @if (Points.Count > 0)
+        {
+            <span>@Points[0].Day.ToString("dd.MM.", CultureInfo.InvariantCulture)</span>
+            <span>@Points[Points.Count / 2].Day.ToString("dd.MM.", CultureInfo.InvariantCulture)</span>
+            <span>@Points[^1].Day.ToString("dd.MM.", CultureInfo.InvariantCulture)</span>
+        }
+    </div>
+    <div class="max-label">max @Max</div>
+</div>
+
+@code {
+    public sealed record DayPoint(DateOnly Day, int Count);
+
+    private const double Width = 600, Height = 200, Top = 14, Bottom = 8;
+    private const int GridLines = 4;
+
+    [Parameter, EditorRequired] public IReadOnlyList<DayPoint> Points { get; set; } = [];
+
+    private int Max => Math.Max(1, Points.Count == 0 ? 1 : Points.Max(p => p.Count));
+    private double Step => Points.Count > 1 ? Width / (Points.Count - 1) : Width;
+
+    private (double X, double Y) Coord(int i)
+    {
+        var x = Points.Count > 1 ? i * Step : Width / 2;
+        var y = Top + (Height - Top - Bottom) * (1 - Points[i].Count / (double)Max);
+        return (x, y);
+    }
+
+    private string LinePath => "M" + string.Join(" L", Enumerable.Range(0, Points.Count).Select(i => { var (x, y) = Coord(i); return $"{F(x)} {F(y)}"; }));
+
+    private string AreaPath => $"{LinePath} L{F(Width)} {F(Height)} L0 {F(Height)} Z";
+
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

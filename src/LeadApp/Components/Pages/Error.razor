@@ -1,0 +1,27 @@
+﻿@page "/Error"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Diagnostics
+
+<PageTitle>Greška · Partner MKF</PageTitle>
+
+<div class="card card-pad center">
+    <StatusIllustration Kind="StatusIllustration.StatusKind.Error" />
+    <h1>Došlo je do greške</h1>
+    <p class="muted">Vaš zahtjev nije mogao biti obrađen. Molimo pokušajte ponovo.</p>
+    @if (ShowRequestId)
+    {
+        <p class="muted mono">ID zahtjeva: @RequestId</p>
+    }
+    <a class="btn btn-primary" href="">Nazad na početnu</a>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

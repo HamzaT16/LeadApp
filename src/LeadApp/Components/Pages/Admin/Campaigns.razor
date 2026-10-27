@@ -1,0 +1,529 @@
+@page "/admin/campaigns"
+@using LeadApp.Services.Campaigns
+@using LeadApp.Services.Crm
+@inject ICampaignRepository CampaignRepo
+@inject CampaignService CampaignService
+@inject AppClock Clock
+@inject ToastService Toasts
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IOptions<CrmOptions> CrmOptions
+@inject ILogger<Campaigns> Logger
+
+<PageTitle>Kampanje · Admin · Partner MKF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Kampanje</h1>
+        <p>Online kampanje sa vlastitim linkom. Kampanja se registruje u CRM-u, a link (<span class="mono">urlId</span>) povezuje leadove sa njom.</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" Size="16" /> Nova kampanja</button>
+    </div>
+</div>
+
+@if (_campaigns is null && _error is null)
+{
+    <PageLoader />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error"><Icon Name="alert" Size="18" /> @_error</div>
+}
+else if (_campaigns!.Count == 0)
+{
+    <section class="card">
+        <EmptyState Title="Još nema kampanja" Text="Kampanja dobija svoj link (npr. /k/agro-viber-2026) koji možete podijeliti putem Vibera, SMS-a ili društvenih mreža.">
+            <button type="button" class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" Size="16" /> Kreiraj prvu kampanju</button>
+        </EmptyState>
+    </section>
+}
+else
+{
+    <div class="camp-grid">
+        @foreach (var c in _campaigns)
+        {
+            var (_, stateText) = Badges.CampaignState(c, Clock.Today);
+            <article class="card camp" @key="c.Id">
+                <header class="camp-head">
+                    <span class="camp-channel"><Icon Name="megaphone" Size="18" /></span>
+                    <div class="camp-title">
+                        <h2>@c.Name</h2>
+                        <span class="cell-sub">#@c.Id · @OnlineChannelCodes.NameOf(c.ChannelCode) · @(c.Product is { } p ? DisplayNames.Of(p) : "Svi proizvodi")</span>
+                    </div>
+                    <Badges Campaign="c" Today="Clock.Today" />
+                </header>
+
+                <div class="camp-link">
+                    <Icon Name="link" Size="15" />
+                    <span class="mono" title="@LinkFor(c)">@ShortLink(c)</span>
+                    <button type="button" class="icon-btn" title="Kopiraj link" @onclick="() => CopyLinkAsync(c)"><Icon Name="copy" Size="15" /></button>
+                    <a class="icon-btn" title="Otvori" href="@LinkFor(c)" target="_blank" rel="noopener"><Icon Name="external" Size="15" /></a>
+                </div>
+
+                <div class="crm-line">
+                    @if (c.IsInCrm)
+                    {
+                        <span class="badge badge-success">CRM #@c.CrmCampaignId · @c.CrmStatusCode</span>
+                    }
+                    else
+                    {
+                        <span class="badge @(c.CrmStatus == CrmSyncStatus.Failed ? "badge-danger" : "badge-warning")" title="@c.CrmError">
+                            @(c.CrmStatus == CrmSyncStatus.Failed ? "Nije u CRM-u" : "Čeka slanje u CRM")
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-sm" disabled="@(_busyId == c.Id)" @onclick="() => SendToCrmAsync(c)">
+                            @if (_busyId == c.Id)
+                            {
+                                <span class="spinner dark"></span>
+                            }
+                            else
+                            {
+                                <Icon Name="send" Size="14" />
+                            }
+                            Pošalji u CRM
+                        </button>
+                    }
+                </div>
+                @if (!c.IsInCrm && c.CrmError is not null)
+                {
+                    <p class="crm-error" title="@c.CrmError">@c.CrmError</p>
+                }
+
+                <div class="camp-stats">
+                    <div><span>Pregledi</span><b>@c.ViewsCount</b></div>
+                    <div><span>Leadovi</span><b class="brand">@c.LeadsCount</b></div>
+                    <div><span>Konverzija</span><b>@c.ConversionRate.ToString("P1", Bs)</b></div>
+                </div>
+                <div class="conv-track" title="Konverzija"><span style="width:@Pct(c.ConversionRate)%"></span></div>
+
+                <footer class="camp-foot">
+                    <span class="camp-dates"><Icon Name="calendar" Size="14" /> @c.StartDate.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) – @c.EndDate.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)</span>
+                    <div class="actions">
+                        <a class="icon-btn" title="Leadovi ove kampanje" href="@($"admin/leads?campaign={c.Id}")"><Icon Name="inbox" Size="15" /></a>
+                        <button type="button" class="icon-btn" title="@(c.Status == CampaignStatus.Published ? "Deaktiviraj" : "Aktiviraj")" disabled="@(_busyId == c.Id)" @onclick="() => ToggleStatusAsync(c)">
+                            <Icon Name="@(c.Status == CampaignStatus.Published ? "pause" : "play")" Size="15" />
+                        </button>
+                        <button type="button" class="icon-btn" title="Uredi" @onclick="() => OpenEdit(c)"><Icon Name="edit" Size="15" /></button>
+                        <button type="button" class="icon-btn danger" title="Obriši" @onclick="() => _toDelete = c"><Icon Name="trash" Size="15" /></button>
+                    </div>
+                </footer>
+                <span class="sr-only">Status: @stateText</span>
+            </article>
+        }
+    </div>
+}
+
+@* ---------- create / edit ---------- *@
+<Modal Open="_form is not null" Title="@(_editing is null ? "Nova kampanja" : $"Uređivanje kampanje #{_editing.Id}")" Icon="megaphone" Size="lg" OnClose="CloseForm">
+    <ChildContent>
+        @if (_form is not null)
+        {
+            <EditForm id="campaign-form" Model="_form" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                <h3 class="form-section">Podaci za CRM</h3>
+                @if (Locked)
+                {
+                    <div class="alert alert-info locked-note">
+                        <Icon Name="lock" Size="16" />
+                        <span>Kampanja je registrovana u CRM-u (#@_editing!.CrmCampaignId). CRM ne podržava izmjenu kampanje, pa su ovi podaci zaključani. Možete mijenjati proizvod, izvor prilike i status.</span>
+                    </div>
+                }
+
+                <div class="field">
+                    <label for="c-name">Naziv kampanje *</label>
+                    <InputText id="c-name" class="input" Value="@_form.Name" ValueChanged="OnNameChanged" ValueExpression="() => _form.Name" placeholder="npr. Online gotovinski kredit — novembar 2026" maxlength="255" disabled="@Locked" />
+                    <ValidationMessage For="() => _form.Name" />
+                </div>
+
+                <div class="field">
+                    <label for="c-slug">URL identifikator (urlId) *</label>
+                    <div class="slug-input">
+                        <span class="slug-prefix">@SlugPrefix</span>
+                        <InputText id="c-slug" class="input" Value="@_form.Slug" ValueChanged="OnSlugChanged" ValueExpression="() => _form.Slug" placeholder="gotovinski-kredit-2026-11-viber" disabled="@Locked" />
+                    </div>
+                    <span class="field-hint">Jedinstven u CRM-u, mala slova, brojevi i crtice. Nije puna URL adresa.</span>
+                    <ValidationMessage For="() => _form.Slug" />
+                    @if (_slugError is not null)
+                    {
+                        <span class="validation-message">@_slugError</span>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="c-desc">Opis kampanje *</label>
+                    <InputTextArea id="c-desc" class="input" rows="2" @bind-Value="_form.Description" placeholder="npr. Promocija gotovinskih kredita putem Vibera." maxlength="255" disabled="@Locked" />
+                    <ValidationMessage For="() => _form.Description" />
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="c-type">Tip klijenta *</label>
+                        <InputSelect id="c-type" class="select" @bind-Value="_form.CustomerType" disabled="@Locked">
+                            <option value="@CustomerType.FL">Fizička lica (FL)</option>
+                            <option value="@CustomerType.PL">Pravna lica (PL)</option>
+                        </InputSelect>
+                    </div>
+                    <div class="field">
+                        <label for="c-channelcode">Kanal promocije (channelCode) *</label>
+                        <InputSelect id="c-channelcode" class="select" Value="_form.ChannelCode" ValueChanged="(string v) => OnChannelCodeChanged(v)" ValueExpression="() => _form.ChannelCode" disabled="@Locked">
+                            @foreach (var (channelCode, name) in OnlineChannelCodes.All)
+                            {
+                                <option value="@channelCode">@name (@channelCode)</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => _form.ChannelCode" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="c-target">Opis ciljne grupe *</label>
+                    <InputTextArea id="c-target" class="input" rows="2" @bind-Value="_form.TargetGroupDescription" placeholder="npr. Fizička lica zainteresovana za gotovinski kredit." maxlength="255" disabled="@Locked" />
+                    <span class="field-hint">Samo opis — ne bira klijente automatski.</span>
+                    <ValidationMessage For="() => _form.TargetGroupDescription" />
+                </div>
+
+                <div class="grid-3">
+                    <div class="field">
+                        <label for="c-start">Datum početka *</label>
+                        <InputDate id="c-start" class="input" @bind-Value="_form.StartDate" disabled="@Locked" />
+                        <ValidationMessage For="() => _form.StartDate" />
+                    </div>
+                    <div class="field">
+                        <label for="c-end">Datum završetka *</label>
+                        <InputDate id="c-end" class="input" @bind-Value="_form.EndDate" disabled="@Locked" />
+                        <ValidationMessage For="() => _form.EndDate" />
+                    </div>
+                    <div class="field">
+                        <label for="c-limit">Rok pripisivanja prodaje</label>
+                        <InputDate id="c-limit" class="input" @bind-Value="_form.EndTimeLimit" disabled="@Locked" />
+                        <ValidationMessage For="() => _form.EndTimeLimit" />
+                    </div>
+                </div>
+                <span class="field-hint dates-hint">Početak u 00:00, završetak i rok u 23:59:59 (Europe/Sarajevo). Prazan rok = datum završetka.</span>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="c-cost">Trošak kampanje (EUR) *</label>
+                        <InputNumber id="c-cost" class="input" @bind-Value="_form.Cost" step="0.01" min="0" disabled="@Locked" />
+                        <ValidationMessage For="() => _form.Cost" />
+                    </div>
+                    <div class="field">
+                        <label for="c-emp">ID zaposlenog kreatora *</label>
+                        <InputNumber id="c-emp" class="input" @bind-Value="_form.CreatedByEmployeeId" placeholder="ROW_ID iz employee.csv" disabled="@Locked" />
+                        <ValidationMessage For="() => _form.CreatedByEmployeeId" />
+                    </div>
+                </div>
+
+                <h3 class="form-section">Postavke obrasca</h3>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="c-product">Proizvod / svrha</label>
+                        <InputSelect id="c-product" class="select" @bind-Value="_form.Product">
+                            <option value="">Svi proizvodi (klijent bira)</option>
+                            @foreach (var p in Enum.GetValues<LoanPurpose>())
+                            {
+                                <option value="@p">@DisplayNames.Of(p)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="field">
+                        <label for="c-channel">Izvor prilike za leadove (sourceCode) *</label>
+                        <InputSelect id="c-channel" class="select" Value="_form.Channel" ValueChanged="(string v) => OnSourceChanged(v)" ValueExpression="() => _form.Channel">
+                            @foreach (var (sourceCode, name) in SourceCodes.All)
+                            {
+                                <option value="@sourceCode">@name (@sourceCode)</option>
+                            }
+                        </InputSelect>
+                        <span class="field-hint">Šalje se uz svaki lead iz ove kampanje.</span>
+                        <ValidationMessage For="() => _form.Channel" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Status</span>
+                    <div class="status-switch">
+                        <label class="@(_form.Status == CampaignStatus.Published ? "on" : "")">
+                            <input type="radio" name="c-status" checked="@(_form.Status == CampaignStatus.Published)" @onchange="() => _form.Status = CampaignStatus.Published" />
+                            <Icon Name="play" Size="14" /> Objavljena
+                        </label>
+                        <label class="@(_form.Status == CampaignStatus.Inactive ? "on" : "")">
+                            <input type="radio" name="c-status" checked="@(_form.Status == CampaignStatus.Inactive)" @onchange="() => _form.Status = CampaignStatus.Inactive" />
+                            <Icon Name="pause" Size="14" /> Neaktivna
+                        </label>
+                    </div>
+                </div>
+            </EditForm>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-ghost" @onclick="CloseForm" disabled="@_saving">Odustani</button>
+        <button type="submit" form="campaign-form" class="btn btn-primary" disabled="@_saving">
+            @if (_saving)
+            {
+                <span class="spinner"></span>
+            }
+            @(_editing is null ? "Kreiraj i pošalji u CRM" : Locked ? "Sačuvaj izmjene" : "Sačuvaj i pošalji u CRM")
+        </button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog Open="_toDelete is not null" Title="Brisanje kampanje" Danger="true" ConfirmText="Obriši" Busy="_saving"
+               Message="@DeleteMessage"
+               OnCancel="() => _toDelete = null" OnConfirm="DeleteAsync" />
+
+@code {
+    private static readonly CultureInfo Bs = CultureInfo.GetCultureInfo("bs-Latn-BA");
+
+    private IReadOnlyList<Campaign>? _campaigns;
+    private string? _error;
+
+    private CampaignFormModel? _form;
+    private Campaign? _editing;
+    private bool _slugTouched;
+    private bool _sourceTouched;
+    private string? _slugError;
+    private bool _saving;
+    private string? _busyId;
+    private Campaign? _toDelete;
+
+    private string SlugPrefix => new Uri(Navigation.BaseUri).Host + "/k/";
+
+    /// <summary>Fields sent to the CRM are read-only once the campaign is registered there.</summary>
+    private bool Locked => _editing?.IsInCrm == true;
+
+    private string DeleteMessage => _toDelete?.IsInCrm == true
+        ? $"Obrisati kampanju \"{_toDelete.Name}\" iz ove aplikacije? Njen link će prestati raditi. Kampanja ostaje u CRM-u (#{_toDelete.CrmCampaignId}). Već zaprimljeni leadovi ostaju sačuvani."
+        : $"Trajno obrisati kampanju \"{_toDelete?.Name}\"? Njen link će prestati raditi. Već zaprimljeni leadovi ostaju sačuvani.";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _campaigns = await CampaignRepo.GetAllAsync();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Loading campaigns failed");
+            _error = "Kampanje se trenutno ne mogu učitati.";
+        }
+    }
+
+    private string LinkFor(Campaign c) => Navigation.BaseUri + "k/" + c.Slug;
+    private string ShortLink(Campaign c) => "/k/" + c.Slug;
+
+    private static string Pct(double rate) =>
+        Math.Clamp(rate * 100, 0, 100).ToString("0.#", CultureInfo.InvariantCulture);
+
+    private void OpenCreate()
+    {
+        var today = Clock.Today;
+        _editing = null;
+        _slugTouched = false;
+        _sourceTouched = false;
+        _slugError = null;
+        _form = new CampaignFormModel
+        {
+            StartDate = today,
+            EndDate = today.AddMonths(1),
+            Cost = 0,
+            CreatedByEmployeeId = CrmOptions.Value.DefaultEmployeeId,
+            Channel = OnlineChannelCodes.DefaultSourceCode(OnlineChannelCodes.Viber)!,
+            Today = today
+        };
+    }
+
+    private void OpenEdit(Campaign c)
+    {
+        _editing = c;
+        _slugTouched = true;
+        _sourceTouched = true;
+        _slugError = null;
+        _form = CampaignFormModel.From(c, Clock.Today);
+    }
+
+    private void CloseForm()
+    {
+        if (!_saving)
+            _form = null;
+    }
+
+    // The slug follows the name until the admin edits it by hand.
+    private void OnNameChanged(string value)
+    {
+        _form!.Name = value;
+        if (!_slugTouched)
+            _form.Slug = Slug.FromName(value);
+    }
+
+    private void OnSlugChanged(string value)
+    {
+        _slugTouched = true;
+        _slugError = null;
+        _form!.Slug = value.Trim().ToLowerInvariant();
+    }
+
+    // The lead source follows the promotion channel (where there is a natural match) until changed by hand.
+    private void OnChannelCodeChanged(string value)
+    {
+        _form!.ChannelCode = value;
+        if (!_sourceTouched && OnlineChannelCodes.DefaultSourceCode(value) is { } source)
+            _form.Channel = source;
+    }
+
+    private void OnSourceChanged(string value)
+    {
+        _sourceTouched = true;
+        _form!.Channel = value;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _slugError = null;
+        try
+        {
+            Campaign campaign;
+            CrmCampaignResult? result;
+            if (_editing is null)
+            {
+                campaign = new Campaign();
+                _form!.ApplyTo(campaign);
+                result = await CampaignService.CreateAsync(campaign);
+            }
+            else
+            {
+                campaign = _editing.Clone();
+                _form!.ApplyTo(campaign);
+                result = await CampaignService.UpdateAsync(campaign);
+            }
+
+            await LoadAsync();
+            HandleCrmResult(campaign, result, fromForm: true);
+        }
+        catch (SlugConflictException ex)
+        {
+            _slugError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving campaign failed");
+            Toasts.Error("Kampanja nije sačuvana. Pokušajte ponovo.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SendToCrmAsync(Campaign c)
+    {
+        _busyId = c.Id;
+        try
+        {
+            var campaign = c.Clone();
+            var result = await CampaignService.SendToCrmAsync(campaign);
+            await LoadAsync();
+            HandleCrmResult(campaign, result, fromForm: false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Sending campaign {Id} to CRM failed", c.Id);
+            Toasts.Error("Slanje u CRM nije uspjelo zbog neočekivane greške.");
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+
+    private void HandleCrmResult(Campaign campaign, CrmCampaignResult? result, bool fromForm)
+    {
+        if (result is null)
+        {
+            Toasts.Success("Izmjene su sačuvane.");
+            _form = null;
+            return;
+        }
+
+        if (result.Success)
+        {
+            Toasts.Success($"Kampanja \"{campaign.Name}\" je registrovana u CRM-u (#{campaign.CrmCampaignId}, {campaign.CrmStatusCode}).");
+            _form = null;
+            return;
+        }
+
+        if (result.UrlIdConflict)
+        {
+            // Saved locally but the CRM already has this urlId: reopen the form so the admin can pick another one.
+            OpenEdit(campaign);
+            _slugError = "Ovaj urlId je već zauzet u CRM-u (i ručno kreirane ili neaktivne kampanje se računaju). Promijenite ga i sačuvajte ponovo.";
+            Toasts.Error("Kampanja je sačuvana, ali CRM je odbio urlId.");
+            return;
+        }
+
+        var hint = result.EmployeeNotFound ? " Provjerite ID zaposlenog." : "";
+        Toasts.Error($"Kampanja je sačuvana, ali nije registrovana u CRM-u: {result.Error}{hint}");
+        if (fromForm)
+            _form = null;
+    }
+
+    private async Task ToggleStatusAsync(Campaign c)
+    {
+        _busyId = c.Id;
+        try
+        {
+            var updated = c.Clone();
+            updated.Status = c.Status == CampaignStatus.Published ? CampaignStatus.Inactive : CampaignStatus.Published;
+            await CampaignRepo.UpdateAsync(updated);
+            Toasts.Success(updated.Status == CampaignStatus.Published ? "Kampanja je aktivirana." : "Kampanja je deaktivirana.");
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Toggling campaign {Id} failed", c.Id);
+            Toasts.Error("Status nije promijenjen.");
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_toDelete is null)
+            return;
+
+        _saving = true;
+        try
+        {
+            await CampaignRepo.DeleteAsync(_toDelete.Id);
+            Toasts.Success($"Kampanja \"{_toDelete.Name}\" je obrisana.");
+            _toDelete = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Deleting campaign failed");
+            Toasts.Error("Kampanja nije obrisana.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CopyLinkAsync(Campaign c)
+    {
+        var ok = await JS.InvokeAsync<bool>("leadApp.copyText", LinkFor(c));
+        if (ok)
+            Toasts.Success("Link je kopiran.");
+        else
+            Toasts.Error("Kopiranje nije uspjelo.");
+    }
+}

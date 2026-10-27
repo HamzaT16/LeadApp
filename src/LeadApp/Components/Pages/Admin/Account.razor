@@ -1,0 +1,107 @@
+@page "/admin/account"
+@using System.ComponentModel.DataAnnotations
+@inject AdminAuthService Auth
+@inject ToastService Toasts
+
+<PageTitle>Račun · Admin · Partner MKF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Račun</h1>
+        <p>Podaci za prijavu administratora.</p>
+    </div>
+</div>
+
+<div class="account-grid">
+    <section class="card card-pad profile">
+        <span class="big-avatar">@_email[..1].ToUpperInvariant()</span>
+        <div>
+            <span class="cell-sub">Prijavljeni ste kao</span>
+            <h2>@_email</h2>
+            <span class="badge badge-info">Administrator</span>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-head"><h2><Icon Name="lock" Size="16" /> Promjena lozinke</h2></div>
+        <div class="card-pad">
+            <EditForm Model="_input" OnValidSubmit="ChangeAsync">
+                <DataAnnotationsValidator />
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error"><Icon Name="alert" Size="18" /> @_error</div>
+                }
+                <div class="field">
+                    <label for="current">Trenutna lozinka</label>
+                    <InputText id="current" type="password" class="input" @bind-Value="_input.Current" autocomplete="current-password" />
+                    <ValidationMessage For="() => _input.Current" />
+                </div>
+                <div class="field">
+                    <label for="new">Nova lozinka</label>
+                    <InputText id="new" type="password" class="input" @bind-Value="_input.New" autocomplete="new-password" />
+                    <span class="field-hint">Najmanje @AdminAuthService.MinPasswordLength znakova.</span>
+                    <ValidationMessage For="() => _input.New" />
+                </div>
+                <div class="field">
+                    <label for="confirm">Potvrda nove lozinke</label>
+                    <InputText id="confirm" type="password" class="input" @bind-Value="_input.Confirm" autocomplete="new-password" />
+                    <ValidationMessage For="() => _input.Confirm" />
+                </div>
+                <button type="submit" class="btn btn-primary" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <span class="spinner"></span>
+                    }
+                    Promijeni lozinku
+                </button>
+            </EditForm>
+        </div>
+    </section>
+</div>
+
+@code {
+    private PasswordInput _input = new();
+    private string _email = "?";
+    private string? _error;
+    private bool _saving;
+
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _email = state.User.Identity?.Name ?? "?";
+    }
+
+    private async Task ChangeAsync()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            _error = await Auth.ChangePasswordAsync(_email, _input.Current, _input.New);
+            if (_error is null)
+            {
+                _input = new();
+                Toasts.Success("Lozinka je promijenjena.");
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class PasswordInput
+    {
+        [Required(ErrorMessage = "Unesite trenutnu lozinku.")]
+        public string Current { get; set; } = "";
+
+        [Required(ErrorMessage = "Unesite novu lozinku.")]
+        [MinLength(AdminAuthService.MinPasswordLength, ErrorMessage = "Lozinka je prekratka.")]
+        public string New { get; set; } = "";
+
+        [Compare(nameof(New), ErrorMessage = "Lozinke se ne podudaraju.")]
+        public string Confirm { get; set; } = "";
+    }
+}

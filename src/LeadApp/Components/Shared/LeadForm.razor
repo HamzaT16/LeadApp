@@ -1,0 +1,304 @@
+@implements IDisposable
+@inject ILocationService Locations
+@inject LeadFormValidator Validator
+@inject LeadSubmissionService Submissions
+@inject ClientInfo Client
+@inject IOptions<LeadFormOptions> FormOptions
+
+<EditForm EditContext="_editContext" OnSubmit="SubmitAsync" class="lead-form" novalidate>
+    <div class="form-head">
+        <span class="form-kicker"><Icon Name="sparkles" Size="14" /> @(Campaign is null ? "Brzi kreditni upit" : "Posebna ponuda")</span>
+        <h2>@(Campaign?.Name ?? "Kreditni upit")</h2>
+        <p>Popunite upit i saznajte uslove u nekoliko klikova.</p>
+    </div>
+
+    @* ---- customer type ---- *@
+    <div class="segmented" role="radiogroup" aria-label="Tip klijenta">
+        <button type="button" role="radio" aria-checked="@(Model.CustomerType == CustomerType.FL)"
+                class="@(Model.CustomerType == CustomerType.FL ? "on" : "")" @onclick="() => SetType(CustomerType.FL)">
+            <Icon Name="user" Size="16" /> Fizičko lice
+        </button>
+        <button type="button" role="radio" aria-checked="@(Model.CustomerType == CustomerType.PL)"
+                class="@(Model.CustomerType == CustomerType.PL ? "on" : "")" @onclick="() => SetType(CustomerType.PL)">
+            <Icon Name="building" Size="16" /> Pravno lice
+        </button>
+        <span class="seg-thumb @(Model.CustomerType == CustomerType.PL ? "right" : "")" aria-hidden="true"></span>
+    </div>
+
+    @* ---- amount ---- *@
+    <div class="amount">
+        <label for="amount" class="amount-label">Željeni iznos kredita</label>
+        <div class="amount-value"><span>@Model.Amount.ToString("N0", Bosnian)</span> <small>@Opts.Currency</small></div>
+        <input id="amount" type="range" class="slider" style="--p:@SliderPercent%"
+               min="@Inv(Opts.MinAmount)" max="@Inv(Opts.MaxAmount)" step="@Inv(Opts.Step)"
+               value="@Inv(Model.Amount)" @oninput="OnAmountInput" aria-valuetext="@($"{Model.Amount:N0} {Opts.Currency}")" />
+        <div class="amount-scale"><span>@Opts.MinAmount.ToString("N0", Bosnian) @Opts.Currency</span><span>@Opts.MaxAmount.ToString("N0", Bosnian) @Opts.Currency</span></div>
+    </div>
+
+    @* ---- identity ---- *@
+    @if (Model.CustomerType == CustomerType.FL)
+    {
+        <div class="grid-2">
+            <div class="field">
+                <label for="firstName">Ime *</label>
+                <InputText id="firstName" class="input" @bind-Value="Model.FirstName" placeholder="Unesite ime" autocomplete="given-name" maxlength="120" />
+                <ValidationMessage For="() => Model.FirstName" />
+            </div>
+            <div class="field">
+                <label for="lastName">Prezime *</label>
+                <InputText id="lastName" class="input" @bind-Value="Model.LastName" placeholder="Unesite prezime" autocomplete="family-name" maxlength="120" />
+                <ValidationMessage For="() => Model.LastName" />
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="grid-2">
+            <div class="field">
+                <label for="company">Naziv firme *</label>
+                <InputText id="company" class="input" @bind-Value="Model.CompanyName" placeholder="Firma d.o.o." autocomplete="organization" maxlength="200" />
+                <ValidationMessage For="() => Model.CompanyName" />
+            </div>
+            <div class="field">
+                <label for="contact">Kontakt osoba *</label>
+                <InputText id="contact" class="input" @bind-Value="Model.ContactPerson" placeholder="Ime i prezime" autocomplete="name" maxlength="120" />
+                <ValidationMessage For="() => Model.ContactPerson" />
+            </div>
+        </div>
+    }
+
+    @* ---- contact ---- *@
+    <div class="grid-2">
+        <div class="field">
+            <label for="phone">Broj telefona *</label>
+            <div class="input-icon">
+                <Icon Name="phone" Size="16" />
+                <InputText id="phone" type="tel" class="input" @bind-Value="Model.PhoneNumber" placeholder="+387 61 123 456" autocomplete="tel" maxlength="40" required />
+            </div>
+            <ValidationMessage For="() => Model.PhoneNumber" />
+        </div>
+        <div class="field">
+            <label for="email">E-mail adresa <span class="optional">(opcionalno)</span></label>
+            <div class="input-icon">
+                <Icon Name="mail" Size="16" />
+                <InputText id="email" type="email" class="input" @bind-Value="Model.Email" placeholder="ime.prezime@example.com" autocomplete="email" maxlength="128" />
+            </div>
+            <ValidationMessage For="() => Model.Email" />
+        </div>
+    </div>
+
+    @* ---- location ---- *@
+    <div class="grid-2">
+        <div class="field">
+            <label for="city">Općina *</label>
+            <InputSelect id="city" class="select" Value="Model.CityId" ValueExpression="() => Model.CityId" ValueChanged="(long? v) => OnCityChanged(v)">
+                <option value="">Odaberite općinu</option>
+                @foreach (var m in Locations.Municipalities)
+                {
+                    <option value="@m.Id">@m.Name</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Model.CityId" />
+        </div>
+        <div class="field">
+            <label for="mz">Mjesna zajednica *</label>
+            <InputSelect id="mz" class="select" @bind-Value="Model.LocalCommunityId" disabled="@(Model.CityId is null)">
+                <option value="">@(Model.CityId is null ? "Prvo izaberite općinu" : "Odaberite mjesnu zajednicu")</option>
+                @foreach (var c in _communities)
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Model.LocalCommunityId" />
+        </div>
+    </div>
+
+    @* ---- purpose ---- *@
+    <div class="field">
+        <span class="field-label" id="purpose-label">Svrha / proizvod kredita *</span>
+        <div class="purposes" role="radiogroup" aria-labelledby="purpose-label">
+            @foreach (var (purpose, icon) in Purposes)
+            {
+                var locked = Campaign?.Product is { } p && p != purpose;
+                <button type="button" role="radio" aria-checked="@(Model.Purpose == purpose)" disabled="@locked"
+                        class="purpose @(Model.Purpose == purpose ? "on" : "")" @onclick="() => Model.Purpose = purpose">
+                    <span class="purpose-icon"><Icon Name="@icon" Size="22" /></span>
+                    <span class="purpose-title">@DisplayNames.Of(purpose)</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ---- honeypot (hidden from people and assistive tech) ---- *@
+    <div class="hp" aria-hidden="true">
+        <label for="website">Web stranica</label>
+        <InputText id="website" @bind-Value="Model.Website" tabindex="-1" autocomplete="off" />
+    </div>
+
+    @* ---- consent ---- *@
+    <label class="check consent">
+        <InputCheckbox @bind-Value="Model.Consent" />
+        <span>
+            Saglasan/a sam da MKF u svrhu obrade ovog upita može obrađivati moje lične podatke na zakonom propisan način,
+            te obustaviti postupak dalje obrade ako odbijem dati tražene lične podatke. Poznato mi je da ukoliko ustanovim da su
+            upisani lični podaci pogrešni imam pravo zahtijevati ispravku, te da MKF zadržava pravo nepostupanja po upitu bez
+            obrazloženja. Potvrđujem da sam upoznat/a sa
+            <a href="@Opts.TermsUrl" target="_blank" rel="noopener noreferrer">Opštim uslovima poslovanja</a> i
+            <a href="@Opts.PriceListUrl" target="_blank" rel="noopener noreferrer">Reprezentativnim primjerom mikrokredita</a>.
+        </span>
+    </label>
+    <ValidationMessage For="() => Model.Consent" />
+
+    @if (_banner is not null)
+    {
+        <div class="alert alert-error banner" role="alert"><Icon Name="alert" Size="18" /> @_banner</div>
+    }
+
+    <button type="submit" class="btn btn-gradient btn-lg btn-block submit" disabled="@_submitting">
+        @if (_submitting)
+        {
+            <span class="spinner"></span>
+            <span>Slanje u toku…</span>
+        }
+        else
+        {
+            <span>Pošalji kreditni upit</span>
+            <Icon Name="arrow-right" Size="18" />
+        }
+    </button>
+
+    <p class="trust"><Icon Name="shield" Size="14" /> Vaši podaci se šalju šifrovano i koriste se isključivo za obradu upita.</p>
+</EditForm>
+
+@code {
+    private static readonly CultureInfo Bosnian = CultureInfo.GetCultureInfo("bs-Latn-BA");
+
+    private static readonly (LoanPurpose Purpose, string Icon)[] Purposes =
+    [
+        (LoanPurpose.Stanovnistvo, "home"),
+        (LoanPurpose.Poljoprivreda, "tractor"),
+        (LoanPurpose.Biznis, "briefcase"),
+        (LoanPurpose.ZeleniKrediti, "leaf")
+    ];
+
+    private LeadFormModel Model { get; } = new();
+    private EditContext _editContext = default!;
+    private ValidationMessageStore _messages = default!;
+    private IReadOnlyList<LocalCommunity> _communities = [];
+    private bool _attempted;
+    private bool _submitting;
+    private string? _banner;
+
+    /// <summary>The live campaign this form belongs to, or null for a general inquiry.</summary>
+    [Parameter] public Campaign? Campaign { get; set; }
+
+    [Parameter] public EventCallback OnSubmitted { get; set; }
+    [Parameter] public EventCallback OnCampaignInactive { get; set; }
+
+    private LeadFormOptions Opts => FormOptions.Value;
+
+    private double SliderPercent =>
+        (double)((Model.Amount - Opts.MinAmount) / (Opts.MaxAmount - Opts.MinAmount) * 100);
+
+    protected override void OnInitialized()
+    {
+        Model.Amount = Opts.DefaultAmount;
+        _editContext = new EditContext(Model);
+        _messages = new ValidationMessageStore(_editContext);
+        _editContext.OnValidationRequested += OnValidationRequested;
+        _editContext.OnFieldChanged += OnFieldChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Campaign?.Product is { } product)
+            Model.Purpose = product;
+    }
+
+    private void SetType(CustomerType type)
+    {
+        Model.CustomerType = type;
+        Revalidate(onlyTouched: !_attempted);
+    }
+
+    private void OnAmountInput(ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var amount))
+            Model.Amount = Math.Clamp(amount, Opts.MinAmount, Opts.MaxAmount);
+    }
+
+    private void OnCityChanged(long? cityId)
+    {
+        Model.CityId = cityId;
+        Model.LocalCommunityId = null;
+        _communities = cityId is { } id ? Locations.GetLocalCommunities(id) : [];
+        _editContext.NotifyFieldChanged(_editContext.Field(nameof(LeadFormModel.CityId)));
+    }
+
+    private void OnValidationRequested(object? sender, ValidationRequestedEventArgs e) => Revalidate(onlyTouched: false);
+
+    // Before the first submit only show errors for fields the user already touched.
+    private void OnFieldChanged(object? sender, FieldChangedEventArgs e) => Revalidate(onlyTouched: !_attempted);
+
+    private void Revalidate(bool onlyTouched)
+    {
+        _messages.Clear();
+        foreach (var error in Validator.Validate(Model))
+        {
+            var field = _editContext.Field(error.Field);
+            if (!onlyTouched || _editContext.IsModified(field))
+                _messages.Add(field, error.Message);
+        }
+        _editContext.NotifyValidationStateChanged();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_submitting)
+            return;
+
+        _attempted = true;
+        _banner = null;
+        if (!_editContext.Validate())
+            return;
+
+        _submitting = true;
+        try
+        {
+            var result = await Submissions.SubmitAsync(Model, Campaign?.Id, Client.Key);
+            switch (result.Outcome)
+            {
+                case SubmissionOutcome.Accepted:
+                    await OnSubmitted.InvokeAsync();
+                    break;
+                case SubmissionOutcome.Invalid:
+                    _messages.Clear();
+                    foreach (var error in result.Errors ?? [])
+                        _messages.Add(_editContext.Field(error.Field), error.Message);
+                    _editContext.NotifyValidationStateChanged();
+                    break;
+                case SubmissionOutcome.RateLimited:
+                    _banner = "Previše pokušaja slanja. Molimo pokušajte ponovo za nekoliko minuta.";
+                    break;
+                case SubmissionOutcome.CampaignInactive:
+                    await OnCampaignInactive.InvokeAsync();
+                    break;
+                default:
+                    _banner = "Došlo je do greške pri slanju. Molimo pokušajte ponovo.";
+                    break;
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string Inv(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
+    public void Dispose()
+    {
+        _editContext.OnValidationRequested -= OnValidationRequested;
+        _editContext.OnFieldChanged -= OnFieldChanged;
+    }
+}

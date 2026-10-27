@@ -1,0 +1,371 @@
+@page "/admin/leads"
+@inject ILeadRepository LeadRepo
+@inject ICampaignRepository Campaigns
+@inject LeadSubmissionService Submissions
+@inject ILocationService Locations
+@inject AppClock Clock
+@inject ToastService Toasts
+@inject IOptions<LeadFormOptions> FormOptions
+@inject ILogger<Leads> Logger
+
+<PageTitle>Leadovi · Admin · Partner MKF</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Leadovi</h1>
+        <p>Svi zaprimljeni kreditni upiti i status slanja u CRM.</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-ghost" @onclick="LoadAsync" disabled="@_loading"><Icon Name="refresh" Size="16" /> Osvježi</button>
+        <a class="btn btn-success" href="@ExportUrl" download><Icon Name="download" Size="16" /> Izvezi u Excel</a>
+    </div>
+</div>
+
+<section class="card">
+    <div class="toolbar">
+        <div class="field grow">
+            <label for="q">Pretraga</label>
+            <div class="search">
+                <Icon Name="search" Size="16" />
+                <input id="q" class="input" placeholder="Ime, telefon, e-mail ili #broj" value="@_search" @oninput="OnSearch" />
+            </div>
+        </div>
+        <div class="field">
+            <label for="f-campaign">Kampanja</label>
+            <select id="f-campaign" class="select" @bind="_campaignId" @bind:after="ApplyFilter">
+                <option value="">Sve</option>
+                <option value="none">Bez kampanje</option>
+                @foreach (var c in _campaigns)
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="f-status">CRM status</label>
+            <select id="f-status" class="select" @bind="_status" @bind:after="ApplyFilter">
+                <option value="">Svi</option>
+                @foreach (var s in Enum.GetValues<CrmSyncStatus>())
+                {
+                    <option value="@s">@DisplayNames.Of(s)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="f-type">Tip lica</label>
+            <select id="f-type" class="select" @bind="_type" @bind:after="ApplyFilter">
+                <option value="">Svi</option>
+                <option value="FL">Fizičko lice</option>
+                <option value="PL">Pravno lice</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="f-from">Od</label>
+            <input id="f-from" type="date" class="input" @bind="_from" @bind:after="ApplyFilter" />
+        </div>
+        <div class="field">
+            <label for="f-to">Do</label>
+            <input id="f-to" type="date" class="input" @bind="_to" @bind:after="ApplyFilter" />
+        </div>
+        @if (HasFilters)
+        {
+            <button type="button" class="btn btn-ghost" @onclick="ResetFilters"><Icon Name="x" Size="15" /> Poništi</button>
+        }
+    </div>
+
+    @if (_loading && _all is null)
+    {
+        <PageLoader />
+    }
+    else if (_error is not null)
+    {
+        <div class="card-pad"><div class="alert alert-error"><Icon Name="alert" Size="18" /> @_error</div></div>
+    }
+    else if (_filtered.Count == 0)
+    {
+        <EmptyState Title="@(_all?.Count == 0 ? "Još nema upita" : "Nema rezultata")"
+                    Text="@(_all?.Count == 0 ? "Novi upiti sa javnog obrasca pojavit će se ovdje." : "Promijenite ili poništite filtere.")" />
+    }
+    else
+    {
+        <div class="summary">
+            Prikazano <b>@_filtered.Count</b> od @_all!.Count ·
+            ukupan traženi iznos <b>@_filtered.Sum(l => l.RequestedAmount).ToString("N0", Bs) @Currency</b>
+        </div>
+        <div class="table-wrap">
+            <QuickGrid Items="_filtered.AsQueryable()" Pagination="_pagination" Class="grid">
+                <PropertyColumn Title="#" Property="l => l.Number" Sortable="true" IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
+                <TemplateColumn Title="Datum" Sortable="true" SortBy="ByDate">
+                    <span class="nowrap">@Clock.ToLocal(context.CreatedAtUtc).ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)</span>
+                    <span class="cell-sub">@Clock.ToLocal(context.CreatedAtUtc).ToString("HH:mm", CultureInfo.InvariantCulture)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Klijent" Sortable="true" SortBy="ByName">
+                    <span class="cell-main">@context.FullName</span>
+                    <span class="cell-sub">@DisplayNames.Of(context.CustomerType)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Kontakt">
+                    @if (context.PhoneNumber is not null)
+                    {
+                        <span class="contact"><Icon Name="phone" Size="13" /> @context.PhoneNumber</span>
+                    }
+                    @if (context.Email is not null)
+                    {
+                        <span class="contact"><Icon Name="mail" Size="13" /> @context.Email</span>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="Lokacija">
+                    <span>@(Locations.FindMunicipality(context.CityId)?.Name ?? $"#{context.CityId}")</span>
+                    <span class="cell-sub">@(Locations.FindLocalCommunity(context.LocalCommunityId)?.Name ?? $"#{context.LocalCommunityId}")</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Iznos" Sortable="true" SortBy="ByAmount" Align="Align.End">
+                    <b class="nowrap">@context.RequestedAmount.ToString("N0", Bs) @Currency</b>
+                    <span class="cell-sub">@DisplayNames.Of(context.Purpose)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Kampanja">
+                    @if (context.CampaignName is not null)
+                    {
+                        <span class="chip">@context.CampaignName</span>
+                    }
+                    else
+                    {
+                        <span class="muted">—</span>
+                    }
+                    <span class="cell-sub">@SourceCodes.NameOf(context.SourceCode)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="CRM" Sortable="true" SortBy="ByStatus">
+                    <Badges CrmStatus="context.CrmStatus" />
+                    @if (context.CrmSalesOpportunityId is { } opp)
+                    {
+                        <span class="cell-sub">Prilika #@opp</span>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="" Align="Align.End">
+                    <div class="actions">
+                        @if (context.CrmStatus == CrmSyncStatus.Failed)
+                        {
+                            <button type="button" class="icon-btn" title="Ponovi slanje u CRM" disabled="@(_retrying == context.Id)" @onclick="() => RetryAsync(context)">
+                                <Icon Name="send" Size="16" />
+                            </button>
+                        }
+                        <button type="button" class="icon-btn" title="Detalji" @onclick="() => _selected = context"><Icon Name="eye" Size="16" /></button>
+                    </div>
+                </TemplateColumn>
+            </QuickGrid>
+        </div>
+        <Pager State="_pagination" />
+    }
+</section>
+
+@* ---------- details drawer ---------- *@
+@if (_selected is { } lead)
+{
+    <div class="drawer-backdrop" @onclick="() => _selected = null"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="Detalji leada">
+        <header class="drawer-head">
+            <div>
+                <span class="cell-sub">Lead #@lead.Number</span>
+                <h2>@lead.FullName</h2>
+            </div>
+            <button type="button" class="icon-btn" aria-label="Zatvori" @onclick="() => _selected = null"><Icon Name="x" Size="18" /></button>
+        </header>
+
+        <div class="drawer-body">
+            <div class="drawer-amount">
+                <span>Traženi iznos</span>
+                <b>@lead.RequestedAmount.ToString("N2", Bs) @Currency</b>
+                <small>@DisplayNames.Of(lead.Purpose)</small>
+            </div>
+
+            <h3>Klijent</h3>
+            <dl>
+                <dt>Tip</dt><dd>@DisplayNames.Of(lead.CustomerType) (@lead.CustomerType)</dd>
+                <dt>Telefon</dt><dd>@(lead.PhoneNumber ?? "—")</dd>
+                <dt>E-mail</dt><dd>@(lead.Email ?? "—")</dd>
+                <dt>Općina</dt><dd>@(Locations.FindMunicipality(lead.CityId)?.Name) <span class="muted mono">#@lead.CityId</span></dd>
+                <dt>Mjesna zajednica</dt><dd>@(Locations.FindLocalCommunity(lead.LocalCommunityId)?.Name) <span class="muted mono">#@lead.LocalCommunityId</span></dd>
+                <dt>Zaprimljeno</dt><dd>@Clock.ToLocal(lead.CreatedAtUtc).ToString("dd.MM.yyyy. HH:mm:ss", CultureInfo.InvariantCulture)</dd>
+            </dl>
+
+            <h3>Izvor</h3>
+            <dl>
+                <dt>sourceCode</dt><dd class="mono">@lead.SourceCode</dd>
+                <dt>Kampanja</dt><dd>@(lead.CampaignName ?? "—")</dd>
+                <dt>urlId</dt><dd class="mono">@(lead.CampaignUrlId ?? "—")</dd>
+            </dl>
+
+            <h3>CRM</h3>
+            <dl>
+                <dt>Status</dt><dd><Badges CrmStatus="lead.CrmStatus" /></dd>
+                <dt>Prodajna prilika</dt><dd class="mono">@(lead.CrmSalesOpportunityId?.ToString() ?? "—")</dd>
+                <dt>Faza</dt><dd class="mono">@(lead.CrmPhaseCode ?? "—")</dd>
+                <dt>matchResult</dt><dd class="mono">@(lead.CrmMatchResult ?? "—")</dd>
+                <dt>CRM lead / korisnik</dt><dd class="mono">@(lead.CrmLeadId?.ToString() ?? "—") / @(lead.CrmCustomerId?.ToString() ?? "—")</dd>
+                <dt>Pokušaja</dt><dd>@lead.CrmAttempts@(lead.CrmLastAttemptUtc is { } t ? $" · zadnji {Clock.ToLocal(t):dd.MM. HH:mm}" : "")</dd>
+            </dl>
+
+            @if (lead.CrmError is not null)
+            {
+                <div class="alert alert-error crm-error"><Icon Name="alert" Size="18" /><span>@lead.CrmError</span></div>
+            }
+        </div>
+
+        @if (lead.CrmStatus == CrmSyncStatus.Failed)
+        {
+            <footer class="drawer-foot">
+                <button type="button" class="btn btn-primary btn-block" disabled="@(_retrying == lead.Id)" @onclick="() => RetryAsync(lead)">
+                    @if (_retrying == lead.Id)
+                    {
+                        <span class="spinner"></span>
+                    }
+                    else
+                    {
+                        <Icon Name="send" Size="16" />
+                    }
+                    Ponovi slanje u CRM
+                </button>
+            </footer>
+        }
+    </aside>
+}
+
+@code {
+    private static readonly CultureInfo Bs = CultureInfo.GetCultureInfo("bs-Latn-BA");
+
+    private static readonly GridSort<Lead> ByDate = GridSort<Lead>.ByAscending(l => l.CreatedAtUtc);
+    private static readonly GridSort<Lead> ByName = GridSort<Lead>.ByAscending(l => l.FullName);
+    private static readonly GridSort<Lead> ByAmount = GridSort<Lead>.ByAscending(l => l.RequestedAmount);
+    private static readonly GridSort<Lead> ByStatus = GridSort<Lead>.ByAscending(l => l.CrmStatus);
+
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private IReadOnlyList<Lead>? _all;
+    private List<Lead> _filtered = [];
+    private IReadOnlyList<Campaign> _campaigns = [];
+    private Lead? _selected;
+    private string? _retrying;
+    private bool _loading;
+    private string? _error;
+
+    private string _search = "";
+    private string _campaignId = "";
+    private string _status = "";
+    private string _type = "";
+    private DateOnly? _from;
+    private DateOnly? _to;
+    private CancellationTokenSource? _searchDebounce;
+
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "campaign")] public string? CampaignQuery { get; set; }
+
+    private string Currency => FormOptions.Value.Currency;
+
+    private LeadFilter Filter => new()
+    {
+        Search = _search,
+        CampaignId = string.IsNullOrEmpty(_campaignId) ? null : _campaignId,
+        Status = Enum.TryParse<CrmSyncStatus>(_status, out var s) ? s : null,
+        CustomerType = Enum.TryParse<CustomerType>(_type, out var t) ? t : null,
+        From = _from,
+        To = _to
+    };
+
+    private bool HasFilters => Filter != new LeadFilter { Search = "" };
+
+    private string ExportUrl => "admin/leads/export" + Filter.ToQueryString();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _status = Enum.TryParse<CrmSyncStatus>(StatusQuery, out var s) ? s.ToString() : "";
+        _campaignId = CampaignQuery ?? "";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var leads = LeadRepo.GetAllAsync();
+            var campaigns = Campaigns.GetAllAsync();
+            await Task.WhenAll(leads, campaigns);
+            _all = leads.Result;
+            _campaigns = campaigns.Result;
+            await ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Loading leads failed");
+            _error = "Leadovi se trenutno ne mogu učitati.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task ApplyFilter()
+    {
+        _filtered = Filter.Apply(_all ?? [], Clock).ToList();
+        return _pagination.SetCurrentPageIndexAsync(0);
+    }
+
+    // Debounce typing so the grid does not re-filter on every keystroke.
+    private async Task OnSearch(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        _searchDebounce?.Cancel();
+        var cts = _searchDebounce = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            await ApplyFilter();
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    private Task ResetFilters()
+    {
+        (_search, _campaignId, _status, _type, _from, _to) = ("", "", "", "", null, null);
+        return ApplyFilter();
+    }
+
+    private async Task RetryAsync(Lead lead)
+    {
+        _retrying = lead.Id;
+        try
+        {
+            var updated = await Submissions.RetryCrmAsync(lead.Id);
+            if (updated is null)
+            {
+                Toasts.Error("Lead više ne postoji.");
+                return;
+            }
+
+            ReplaceLead(updated);
+            if (updated.CrmStatus == CrmSyncStatus.Synced)
+                Toasts.Success($"Lead #{updated.Number} je poslan u CRM (prilika #{updated.CrmSalesOpportunityId}).");
+            else
+                Toasts.Error($"Slanje nije uspjelo: {updated.CrmError}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Retrying lead {Id} failed", lead.Id);
+            Toasts.Error("Slanje nije uspjelo zbog neočekivane greške.");
+        }
+        finally
+        {
+            _retrying = null;
+        }
+    }
+
+    private void ReplaceLead(Lead updated)
+    {
+        _all = _all!.Select(l => l.Id == updated.Id ? updated : l).ToList();
+        _filtered = _filtered.Select(l => l.Id == updated.Id ? updated : l).ToList();
+        if (_selected?.Id == updated.Id)
+            _selected = updated;
+    }
+}
